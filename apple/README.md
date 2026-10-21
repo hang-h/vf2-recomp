@@ -164,9 +164,12 @@ Buttons use faint dark translucent fills and white native text. Pressing a butto
 and strengthens its outline. The joystick and Start/Menu buttons use the same style.
 
 The joystick has a small central dead zone and maps touch positions and drag angles to eight digital directions.
+Initial touches are accepted up to 1.3 times the visible joystick radius without enlarging the controls.
+The left/right sectors extend 30 degrees above and below horizontal to reduce accidental jumping or crouching.
 Diagonals hold two direction inputs at once, allowing sequences such as down → down-left → left.
 Dragging outside the circle keeps the direction held until you release. Other fingers can press G/P/K at the same time.
 Smaller **G+P** and **G+K** buttons sit above G and K; **G+P+K** sits below P.
+An equally small **P+K** button sits to the lower left of G and presses punch and kick together.
 Each combination holds its component buttons together. Releasing a combination does not release an individual
 button still held by another finger.
 

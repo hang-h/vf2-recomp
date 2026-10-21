@@ -21,7 +21,7 @@
 static SDL_Renderer *ren;
 static SDL_Window *win;
 static touch_controls::box bx[touch_controls::ACTIONS];
-static const char *names[] = { "up", "down", "left", "right", "guard", "punch", "kick", "Start", "Menu", "G+P", "G+K", "G+P+K" };
+static const char *names[] = { "up", "down", "left", "right", "guard", "punch", "kick", "Start", "Menu", "G+P", "G+K", "G+P+K", "P+K" };
 
 static int fails;
 static void check(bool ok, const char *what)
@@ -222,7 +222,7 @@ int main(int argc, char **argv)
 	// Combination buttons assert their component bits in the same sample. Shared
 	// components stay held until the last physical finger using them is released.
 	const struct { int button; unsigned bits; } combos[] = {
-		{t::GUARD_PUNCH, 3}, {t::GUARD_KICK, 5}, {t::GUARD_PUNCH_KICK, 7}
+		{t::GUARD_PUNCH, 3}, {t::GUARD_KICK, 5}, {t::GUARD_PUNCH_KICK, 7}, {t::PUNCH_KICK, 6}
 	};
 	for (const auto &combo : combos) {
 		tc.finger(ren, win, ev(SDL_EVENT_FINGER_DOWN, 0, combo.button), true);
@@ -257,10 +257,46 @@ int main(int argc, char **argv)
 	touch_controls::box native[touch_controls::ACTIONS];
 	const int native_count = t::layout({40, 0, 880, 390}, native);
 	const auto &native_combo = native[t::GUARD_PUNCH_KICK].r;
-	tc.finger_at(123, native_combo.x + native_combo.w / 2, native_combo.y + native_combo.h / 2, true, true, native, native_count);
-	check(attacks(tc) == 7, "native view points feed simultaneous G/P/K without renderer coordinates");
-	tc.finger_at(123, 0, 0, false, false, native, native_count);
-	check(attacks(tc) == 0, "native touch cancellation releases the combination");
+	for (const auto &combo : combos) {
+		const auto &button = native[combo.button].r;
+		tc.finger_at(123, button.x + button.w / 2, button.y + button.h / 2, true, true, native, native_count);
+		check(attacks(tc) == combo.bits, "native view points feed the exact combination without renderer coordinates");
+		tc.finger_at(123, 0, 0, false, false, native, native_count);
+		check(attacks(tc) == 0, "native touch cancellation releases the combination");
+	}
+
+	// Small thumb drift while walking must stay horizontal. Check both sides of
+	// the 30-degree boundary in every quadrant, at different distances, and on
+	// the return from a deliberate diagonal while attack buttons remain held.
+	const SDL_FRect native_stick = t::stick_bounds(native);
+	const float radius = native_stick.w / 2;
+	const float center_x = native_stick.x + radius, center_y = native_stick.y + radius;
+	const struct { float degrees; bool horizontal, vertical; } angles[] = {
+		{0, true, false}, {10, true, false}, {22.6f, true, false}, {29.9f, true, false},
+		{30.1f, true, true}, {45, true, true}, {67.4f, true, true}, {67.6f, false, true},
+		{90, false, true}, {45, true, true}, {29.9f, true, false}
+	};
+	for (float reach : {.25f, .8f, 1.5f}) {
+		for (int horizontal : {-1, 1}) for (int vertical : {-1, 1}) {
+			tc.finger_at(123, center_x, center_y, true, true, native, native_count);
+			tc.finger_at(124, native_combo.x + native_combo.w / 2, native_combo.y + native_combo.h / 2,
+				true, true, native, native_count);
+			for (const auto &angle : angles) {
+				const float radians = angle.degrees * 3.14159265358979323846f / 180.0f;
+				tc.finger_at(123, center_x + horizontal * reach * radius * std::cos(radians),
+					center_y + vertical * reach * radius * std::sin(radians), true, false, native, native_count);
+				const unsigned expected = (angle.horizontal ? (horizontal < 0 ? L : R) : 0) |
+					(angle.vertical ? (vertical < 0 ? U : D) : 0);
+				char message[128];
+				snprintf(message, sizeof message, "native stick %.1f degrees, quadrant %d/%d, radius %.2f keeps intended directions and attacks",
+					angle.degrees, horizontal, vertical, reach);
+				check(directions(tc) == expected && attacks(tc) == 7, message);
+			}
+			tc.finger_at(123, center_x, center_y, false, false, native, native_count);
+			check(directions(tc) == 0 && attacks(tc) == 7, "releasing the corrected stick preserves held attacks");
+			tc.release();
+		}
+	}
 
 	// Draw the overlay with a stick and combination held.
 	tc.finger(ren, win, ev(SDL_EVENT_FINGER_DOWN, 0, touch_controls::LEFT), true);

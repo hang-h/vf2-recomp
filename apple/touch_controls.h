@@ -13,7 +13,7 @@ struct touch_controls
 	// what a finger holds (the host turns these into the board's bits: PL_*), and the two
 	// one-frame edges it takes (the board's Start, and the menu)
 	enum action { NONE = -1, UP, DOWN, LEFT, RIGHT, GUARD, PUNCH, KICK, START, MENU,
-		GUARD_PUNCH, GUARD_KICK, GUARD_PUNCH_KICK, ACTIONS };
+		GUARD_PUNCH, GUARD_KICK, GUARD_PUNCH_KICK, PUNCH_KICK, ACTIONS };
 	static constexpr int MAX_FINGERS = 10;
 
 	// The fallback uses a separate full-window coordinate space. Native views use
@@ -66,12 +66,13 @@ struct touch_controls
 		out[n++] = { { ox + 12 * u, oy + 12 * u, 76 * u, 32 * u }, START, false, "Start" };
 		out[n++] = { { ox + W - 88 * u, oy + 12 * u, 76 * u, 32 * u }, MENU, false, "Menu" };
 		if (!menu) {
-			// Smaller combination buttons: above G/K and below P, with no overlap.
+			// Smaller combination buttons surround G/P/K without overlapping them.
 			const float r = 25 * u;
 			const struct { float x, y; int action; const char *label; } combos[] = {
 				{ ox + W - 184 * u, cy - 46 * u, GUARD_PUNCH, "G+P" },
 				{ ox + W - 44 * u, cy - 46 * u, GUARD_KICK, "G+K" },
 				{ ox + W - 114 * u, cy + 45 * u, GUARD_PUNCH_KICK, "G+P+K" },
+				{ ox + W - 244 * u, cy + 45 * u, PUNCH_KICK, "P+K" },
 			};
 			for (const auto &t : combos) out[n++] = { { t.x - r, t.y - r, 2 * r, 2 * r }, t.action, true, t.label };
 		}
@@ -97,7 +98,7 @@ struct touch_controls
 			(inside_stick(stick_bounds(ren), x, y) || at(ren, x, y, menu) != NONE);
 	}
 
-	// A touch starting inside the stick owns it until lifted/canceled, including
+	// A touch starting inside the stick's touch area owns it until lifted/canceled, including
 	// drags outside its circle. Other fingers can press attack buttons independently.
 	// The return value is a single navigation edge for menus; held() exposes both
 	// direction bits for diagonals to the game.
@@ -145,10 +146,12 @@ struct touch_controls
 			m_stick_x = dx / (length > 1 ? length : 1);
 			m_stick_y = dy / (length > 1 ? length : 1);
 			if (length > 0.22f) {
-				// Eight equal 45-degree sectors. A diagonal asserts both arcade bits.
-				constexpr float corner = 0.41421356f; // tan(22.5 degrees)
-				if (std::fabs(dx) >= std::fabs(dy) * corner) mask |= 1u << (dx < 0 ? LEFT : RIGHT);
-				if (std::fabs(dy) >= std::fabs(dx) * corner) mask |= 1u << (dy < 0 ? UP : DOWN);
+				// Widen horizontal-only movement to +/-30 degrees to reduce accidental
+				// jumping/crouching. Vertical-only sectors keep their +/-22.5-degree width.
+				constexpr float horizontal_corner = 0.41421356f; // tan(22.5 degrees)
+				constexpr float vertical_corner = 0.57735027f; // tan(30 degrees)
+				if (std::fabs(dx) >= std::fabs(dy) * horizontal_corner) mask |= 1u << (dx < 0 ? LEFT : RIGHT);
+				if (std::fabs(dy) > std::fabs(dx) * vertical_corner) mask |= 1u << (dy < 0 ? UP : DOWN);
 				action = std::fabs(dx) > std::fabs(dy) ? (dx < 0 ? LEFT : RIGHT) : (dy < 0 ? UP : DOWN);
 			}
 		} else {
@@ -158,6 +161,7 @@ struct touch_controls
 			// component inputs alongside ordinary G/P/K touches.
 			if (action == GUARD_PUNCH || action == GUARD_PUNCH_KICK) mask |= (1u << GUARD) | (1u << PUNCH);
 			if (action == GUARD_KICK || action == GUARD_PUNCH_KICK) mask |= (1u << GUARD) | (1u << KICK);
+			if (action == PUNCH_KICK) mask |= (1u << PUNCH) | (1u << KICK);
 		}
 		const bool pressed = action != NONE && action != finger.menu_action && (finger.stick || !held(action));
 		finger.menu_action = action;
@@ -241,8 +245,11 @@ private:
 
 	static bool inside_stick(const SDL_FRect &r, float x, float y)
 	{
+		// Expand touch capture only; drawing and movement still use the visible radius.
+		constexpr float touch_scale = 1.3f;
+		const float radius = r.w * touch_scale / 2;
 		const float dx = x - r.x - r.w / 2, dy = y - r.y - r.h / 2;
-		return dx * dx + dy * dy <= r.w * r.w / 4;
+		return dx * dx + dy * dy <= radius * radius;
 	}
 	void lift(int slot)
 	{
