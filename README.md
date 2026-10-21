@@ -2,6 +2,20 @@
 
 <h1 align="center">Virtua Fighter 2 Recomp</h1>
 
+> **iPhone, iPad and Mac port:** Open [VF2Recomp.xcodeproj](VF2Recomp.xcodeproj) and run the `VF2 iOS` or `VF2 macOS` scheme (macOS 15+). See the [Apple build and ROM setup guide](apple/README.md) and [upstream update workflow](apple/UPSTREAM.md).
+> Based on `mr-finster/vf2-recomp`. On iOS, use the Files app to copy your `vf2.zip` into **On My iPhone → VF2 Recomp → roms** (or **On My iPad**).
+> The upstream native recompilation and performance descriptions below apply to desktop builds. The iOS build uses an interpreter without JIT.
+
+<p align="center">
+  <a href="docs/screenshots/iphone-gameplay.png"><img src="docs/screenshots/iphone-gameplay.png" alt="Virtua Fighter 2 on iPhone with a circular joystick and native touch buttons" width="800"></a>
+  <br><sub>iPhone with native touch controls</sub>
+</p>
+
+<p align="center">
+  <a href="docs/screenshots/ipad-gameplay.png"><img src="docs/screenshots/ipad-gameplay.png" alt="Virtua Fighter 2 gameplay on iPad" width="800"></a>
+  <br><sub>iPad gameplay</sub>
+</p>
+
 <p align="center"><b>Virtua Fighter 2 (SEGA, arcade, Model 2, 1994) as a native PC game: the game's own i960 program,
 recompiled to native code, with render scales up to 6x, widescreen and smooth motion at any refresh rate.</b></p>
 
@@ -105,6 +119,18 @@ while you pick gives that fighter's other costume, the one player 2 wears in a m
 
 ## Play
 
+### iPhone / iPad
+
+1. Build and run the `VF2 iOS` scheme in [VF2Recomp.xcodeproj](VF2Recomp.xcodeproj). Launch the app once to create its folders.
+2. Open **Files → Browse → On My iPhone → VF2 Recomp → roms**. On iPad, use **On My iPad** instead.
+3. Copy your **`vf2.zip`** into the **`roms`** folder. Keep the ZIP compressed and named exactly `vf2.zip`.
+4. Return to VF2 Recomp. The app detects and validates the ROM, then starts automatically.
+
+The expected path is **`VF2 Recomp/roms/vf2.zip`**. You must provide your own complete MAME **vf2 / Version 2.1** ROM set; game files are not included.
+See the [Apple guide](apple/README.md) for signing, builds, touch controls and alternative ROM import options.
+
+### Desktop (upstream releases)
+
 From the [latest release](https://github.com/mr-finster/vf2-recomp/releases/latest), or the
 [site](https://vf2-recomp.pages.dev/):
 
@@ -202,6 +228,7 @@ it's clearly slower than the CPU on that machine.
 
 | Path | Contents |
 | --- | --- |
+| `apple/` | Apple platform adapters, native touch controls, iOS app icon, builds, tests and upstream update tools; the game engine stays in `src/` |
 | `src/core` | the Fujitsu MB86233 (TGP) core, from MAME, and the shim MAME's CPU cores compile against |
 | `src/rec` | the i960 recompiler: code discovery, native code (SLJIT) at start-up, the C++ build's, the runtime |
 | `src/machine` | Model 2A: memory map, interrupts and timers, the TGP glue, geometrizer and renderer, the tile chip, the sound board, smooth motion |
