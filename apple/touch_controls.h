@@ -63,8 +63,8 @@ struct touch_controls
 			{ ox + W - 44 * u, cy + 26 * u, KICK, "K" },
 		};
 		for (const auto &t : buttons) out[n++] = { { t.x - R, t.y - R, 2 * R, 2 * R }, t.action, true, t.label };
-		out[n++] = { { ox + 12 * u, oy + 12 * u, 76 * u, 32 * u }, START, false, "Start" };
-		out[n++] = { { ox + W - 88 * u, oy + 12 * u, 76 * u, 32 * u }, MENU, false, "Menu" };
+		out[n++] = { { ox + W - 88 * u, oy + 12 * u, 76 * u, 32 * u }, START, false, "Start" };
+		out[n++] = { { ox + 12 * u, oy + 12 * u, 76 * u, 32 * u }, MENU, false, "Menu" };
 		if (!menu) {
 			// Smaller combination buttons surround G/P/K without overlapping them.
 			const float r = 25 * u;

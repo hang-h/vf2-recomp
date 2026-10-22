@@ -132,8 +132,8 @@ int main(int argc, char **argv)
 	float start_x = 0, start_y = 0, menu_x = 0, menu_y = 0;
 	spot(touch_controls::START, start_x, start_y);
 	spot(touch_controls::MENU, menu_x, menu_y);
-	check(start_x < .25f && menu_x > .75f && start_y < .2f && menu_y < .2f,
-		"Start and Menu occupy opposite upper corners");
+	check(menu_x < .25f && start_x > .75f && start_y < .2f && menu_y < .2f,
+		"Menu is at the upper left and Start is at the upper right");
 
 	// Android's finger IDs start at 0: the first one must not be mistaken for a free slot
 	tc.finger(ren, win, ev(SDL_EVENT_FINGER_DOWN, 0, touch_controls::LEFT), true);

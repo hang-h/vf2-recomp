@@ -159,7 +159,7 @@ Game speed and compatibility should be checked with your ROM on a physical devic
 Landscape controls include a circular joystick, G/P/K, Start and Menu.
 The overlay uses a native `UIView` on iOS and `NSView` on Mac, separate from the game renderer.
 It covers the window's safe area independently of the game's aspect ratio, including space outside the game image.
-Start is at the upper left; Menu is at the upper right.
+Menu is at the upper left; Start is at the upper right.
 Buttons use faint dark translucent fills and white native text. Pressing a button slightly darkens its fill
 and strengthens its outline. The joystick and Start/Menu buttons use the same style.
 

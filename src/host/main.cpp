@@ -1186,8 +1186,12 @@ int main(int argc, char **argv)
 	auto window_aspect = [&] {
 		int w = 0, h = 0;
 		SDL_GetWindowSizeInPixels(win, &w, &h);
+		// UIKit already orients the hidden window for landscape, while its desktop
+		// display mode may still be portrait. Only desktop windows need this fallback.
+#ifndef VF2_IOS
 		if ((SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN) && (SDL_GetWindowFlags(win) & SDL_WINDOW_HIDDEN))   // (it takes the screen's size once shown)
 			if (const SDL_DisplayMode *dm = SDL_GetDesktopDisplayMode(SDL_GetPrimaryDisplay())) { w = dm->w; h = dm->h; }
+#endif
 		return h > 0 ? std::clamp(float(w) / float(h), 4.0f / 3.0f, 32.0f / 9.0f) : 16.0f / 9.0f;
 	};
 	auto apply_aspect = [&] {   // true if the picture's shape changed
@@ -2889,7 +2893,9 @@ int main(int argc, char **argv)
 				open_pads(); menu.refresh();
 				if (!touch_shown()) touch.release();
 			}
-			else if (e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED && !aspect_i && apply_aspect()) reshape();
+			// Showing a fullscreen window can finalize its size without a new pixel-size event.
+			else if ((e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED || e.type == SDL_EVENT_WINDOW_SHOWN)
+			         && e.window.windowID == SDL_GetWindowID(win) && !aspect_i && apply_aspect()) reshape();
 			else if (e.type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN || e.type == SDL_EVENT_WINDOW_LEAVE_FULLSCREEN) {
 				menu.refresh();
 				if (SDL_GetKeyboardFocus() != win) SDL_RaiseWindow(win);   // (the move to a new Space can lose it)
