@@ -288,6 +288,8 @@ public:
 	// profile. Takes effect as a cursor next moves onto him: set before the game starts (the
 	// menu restarts it). False for another number, or if the program isn't the one known.
 	bool set_secret_character(int fighter);
+	bool vf1_models_available() const { return m_vf1_available; }
+	bool vf1_selected(int player) const { return player >= 0 && player < 2 && m_vf1_selected[player]; }
 
 	// Milestones (TGP upload, IRQs, first scheduler dispatch...) as they happen, to stderr.
 	std::function<void(const std::string &)> on_milestone;
@@ -357,6 +359,15 @@ public:
 	uint32_t m_uart_bytes = 0;
 
 private:
+	bool m_vf1_available = false;
+	std::array<bool, 2> m_vf1_selected{}, m_vf1_locked{};
+	std::array<int, 2> m_vf1_fighter{-1, -1};
+	std::array<u8, 2> m_vf1_previous{0xff, 0xff}, m_vf1_eaten{};
+	u8 m_vf1_last_mode = 0;
+	void update_vf1_selection();
+	model2_video::model_selection vf1_model_selection() const;
+	u8 vf1_portrait_mask() const;
+	void draw_vf1_portraits(u8 mask);
 	struct tgp_bus;
 	friend struct tgp_bus;
 
@@ -494,6 +505,7 @@ private:
 	struct frame_2d {
 		uint64_t frame = 0;
 		bool kept = false;
+		u8 vf1_portraits = 0;
 		std::vector<u16> tile_ram, palram, colorxlat;
 		std::shared_ptr<const std::vector<u16>> char_ram;
 	};
@@ -504,7 +516,7 @@ private:
 	void keep_2d();
 	void swap_2d(frame_2d &f);   // the frame's 2D state in place of the live one (and back)
 	void bd_pixels(int mode, double dh, double dv, int &dx, int &dy) const;
-	void draw_2d(bool polygons, bool parts);
+	void draw_2d(bool polygons, bool parts, u8 vf1_portraits);
 	bool m_2d_wide = false, m_2d_filter = false;   // what the last draw_2d drew
 	uint64_t m_2d_version = 0;
 	uint64_t m_2d_key[5] = { ~0ull };              // smooth motion: the frame, scale, width, filter and parts it was drawn for

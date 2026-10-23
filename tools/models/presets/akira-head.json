@@ -1,0 +1,77 @@
+{
+  "source_record": "fd4f99",
+  "target": "VF2 Version 2.1, Akira default costume",
+  "description": "VF1 Akira head, including ten VF2 facial variants.",
+  "bindings": [
+    {
+      "object": "0x84dc10",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x86ff68",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x870c11",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x996845",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x9974ee",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x998197",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x998e40",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x999ae9",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x99a792",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x99b43b",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    }
+  ]
+}

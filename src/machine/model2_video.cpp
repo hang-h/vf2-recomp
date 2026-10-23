@@ -95,6 +95,7 @@
 *********************************************************************************************************************************/
 
 #include "model2_video.h"
+#include "../host/vf1_models.h"
 #include "parallel.h"
 #include "texdump.h"
 #include "../gpu/gpu3d.h"
@@ -331,10 +332,20 @@ inline bool model2_video::check_culling(raster_state *raster, u32 attr, float mi
 
 model2_video::model2_video(u32 *bufferram, u32 *textureram0, u32 *textureram1, u8 *lumaram, u16 *palram,
 						   u16 *colorxlat, u8 *gamma, const u8 *texture_rom, size_t texture_rom_bytes,
-						   const u8 *polygon_rom, size_t polygon_rom_bytes)
+						   const u8 *polygon_rom, size_t polygon_rom_bytes, model_overrides::table prepared_models)
 	: m_bufferram(bufferram), m_textureram0(textureram0), m_textureram1(textureram1), m_lumaram(lumaram),
 	  m_palram(palram), m_colorxlat(colorxlat), m_gamma_table(gamma)
 {
+	m_model_overrides.assign(std::move(prepared_models));
+	if (const char *path = getenv("VF2_MODEL_OVERRIDES")) {
+		std::string error;
+		if (!m_model_overrides.load(path, error)) fprintf(stderr, "model overrides: %s\n", error.c_str());
+		else {
+			m_force_models = true;
+			fprintf(stderr, "model overrides: loaded %zu object(s) from %s\n", m_model_overrides.size(), path);
+		}
+	}
+	m_model_overrides.configure_trace(getenv("VF2_DUMP_OBJECTS"));
 	m_renderer = std::make_unique<model2_renderer>(*this);
 	m_renderer->allocate(1, 0);
 	m_pictures = std::make_unique<picture3d[]>(4);   // (3: smooth motion's)
@@ -662,7 +673,7 @@ void model2_video::model2_3d_process_polygon(raster_state *raster, u32 attr)
 
 	raster->polygon_z = zvalue;
 
-	if (cull == false)
+	if (cull == false && !m_suppress_object)
 	{
 		int32_t clipped_verts;
 		poly_vertex verts_in[8], verts_out[8];
@@ -699,6 +710,7 @@ void model2_video::model2_3d_process_polygon(raster_state *raster, u32 attr)
 			}
 
 			/* copy the object information */
+			poly->direct_colour = 0;
 			poly->z = object.z;
 			poly->texheader[0] = object.texheader[0];
 			poly->texheader[1] = object.texheader[1];
@@ -790,6 +802,7 @@ void model2_renderer::prepare(polygon *poly, const rectangle &cliprect, model2_v
 	for (int i = 0; i < poly->num_vertices; i++)
 		out.v[i] = poly->v[i];
 
+	extra.direct_colour = poly->direct_colour;
 	extra.state = &m_state;
 	extra.checker = (poly->texheader[0] >> 15) & 1;
 	extra.lumabase = (poly->texheader[1] & 0xff) << 7;
@@ -963,6 +976,7 @@ void model2_video::export_list(const std::vector<drawn_poly> &list, std::vector<
 		const m2_poly_extra_data &e = d.extra;
 		if (!(d.renderer & 2)) {
 			// draw_scanline_solid's colour
+			if (e.direct_colour) { g.colour = e.direct_colour; continue; }
 			const u32 c = m_palram[e.colorbase + 0x1000] & 0xffff, l = e.luma >> 2;
 			const u32 r = m_colorxlat[0x0000 / 2 + (((c >> 0) & 0x1f) << 8) + l] & 0xff;
 			const u32 gg = m_colorxlat[0x4000 / 2 + (((c >> 5) & 0x1f) << 8) + l] & 0xff;
@@ -2217,6 +2231,52 @@ u32 *model2_video::geo_nop(geo_state *geo, u32 opcode, u32 *input)
 	return input;
 }
 
+// Replacement triangles enter the same clipping, sorting, projection and CPU/GPU lists as
+// arcade polygons. Their local coordinates use the VF2 object's (possibly blended) matrix.
+void model2_video::draw_override(geo_state *geo, const model_overrides::mesh &mesh)
+{
+	raster_state *r = geo->raster;
+	for (const auto &face : mesh) {
+		poly_vertex in[8]{}, out[8]{};
+		for (int k = 0; k < 3; ++k) {
+			in[k].x = face.points[k][0]; in[k].y = face.points[k][1]; in[k].pz = face.points[k][2];
+			transform_point(&in[k], geo->matrix);
+		}
+		poly_vertex normal{}, light = geo->light;
+		vector_cross3(&normal, &in[0], &in[1], &in[2]);
+		normalize_vector(&normal);
+		normalize_vector(&light);
+		// Two-sided flat lighting for the prototype: no dependence on VF1/VF2 winding parity.
+		const float shade = 0.4f + 0.6f * std::clamp(std::abs(dot_product(normal, light)), 0.0f, 1.0f);
+		for (int k = 0; k < 3; ++k) apply_focus(geo, &in[k]);
+		// Clip before perspective division, including a positive near plane.
+		plane near{}; near.normal.pz = 1; near.distance = 0.001f;
+		int n = clip_polygon(in, 3, out, near);
+		for (int k = 0; k < n; ++k) in[k] = out[k];
+		for (int p = 0; p < 4 && n > 2; ++p) {
+			n = clip_polygon(in, n, out, r->clip_plane[r->center_sel][p]);
+			for (int k = 0; k < n; ++k) in[k] = out[k];
+		}
+		if (n < 3 || r->poly_list_index >= MAX_POLYGONS - 1) continue;
+		float z = in[0].pz;
+		for (int k = 1; k < n; ++k) z = std::min(z, in[k].pz);
+		const u16 zi = float_to_zval(side_sort_z(r, m_ext, 1 << 10, z, in, n, false), r->z_adjust);
+		polygon &poly = r->poly_list[r->poly_list_index++];
+		poly = polygon{};
+		poly.z = zi;
+		poly.direct_colour = rgb_t(u32(((face.colour >> 16) & 255) * shade),
+			u32(((face.colour >> 8) & 255) * shade), u32((face.colour & 255) * shade));
+		poly.num_vertices = n;
+		std::copy_n(r->viewport, 4, poly.viewport);
+		std::copy_n(r->center[r->center_sel], 2, poly.center);
+		poly.window = r->cur_window;
+		std::copy_n(in, n, poly.v);
+		poly.next = r->poly_sorted_list[zi];
+		r->poly_sorted_list[zi] = &poly;
+		r->min_z = std::min(r->min_z, zi); r->max_z = std::max(r->max_z, zi);
+	}
+}
+
 /* Command 01: Object Data */
 u32 *model2_video::geo_object_data(geo_state *geo, u32 opcode, u32 *input)
 {
@@ -2227,11 +2287,6 @@ u32 *model2_video::geo_object_data(geo_state *geo, u32 opcode, u32 *input)
 	u32  obc = *input++;     /* Object Count */
 
 	u32 *obp;                /* Object Pointer */
-
-	/* push the initial set of data to the 3d rasterizer */
-	model2_3d_push(raster, opcode >> 23);
-	model2_3d_push(raster, tpa);
-	model2_3d_push(raster, tha);
 
 	/* select where we're reading polygon information from */
 	if (oba & 0x01000000)
@@ -2255,6 +2310,9 @@ u32 *model2_video::geo_object_data(geo_state *geo, u32 opcode, u32 *input)
 	if (obc == 0)
 		obc = 0xfffff;
 
+	if (!m_replay) m_model_overrides.trace(m_geo_frame, oba, obc, geo->mode,
+		geo->matrix, geo->focus.x, geo->focus.y);
+
 	// smooth motion: the object kept with its matrix, or drawn again with the blended one
 	float kept[12];
 	bool swapped = false;
@@ -2268,6 +2326,13 @@ u32 *model2_video::geo_object_data(geo_state *geo, u32 opcode, u32 *input)
 		}
 	}
 
+	const auto *mesh = selected_model(oba);
+	// Still consume the original stream: subsequent objects can inherit its depth key
+	// and rasterizer state. Only its insertion into the visible polygon list is replaced.
+	m_suppress_object = mesh != nullptr;
+	model2_3d_push(raster, opcode >> 23);
+	model2_3d_push(raster, tpa);
+	model2_3d_push(raster, tha);
 	switch (geo->mode & 3)
 	{
 		/* Normals present, No Specular */
@@ -2282,6 +2347,8 @@ u32 *model2_video::geo_object_data(geo_state *geo, u32 opcode, u32 *input)
 		/* No Normals present, Specular */
 		case 3: geo_parse_nn_s(geo, obp, obc); break;
 	}
+	m_suppress_object = false;
+	if (mesh) draw_override(geo, *mesh);
 	if (swapped) memcpy(geo->matrix, kept, sizeof kept);
 
 	/* move by 4 parameters */
@@ -2859,6 +2926,88 @@ u32 *model2_video::geo_process_command(geo_state *geo, u32 opcode, u32 *input, b
 	return input;
 }
 
+// VF2 2.1 heads for both costumes, including expression objects. The descriptor
+// table and each head's initial geometry identify these aliases. Keep replacement
+// active when a display list's face differs from the actor's current slot.
+static int vf1_head_slot(unsigned fighter, u32 object)
+{
+	static constexpr u32 heads[8][20] = {
+		{0x84dc10, 0x86ff68, 0x870c11, 0x996845, 0x9974ee, 0x998197, 0x998e40, 0x999ae9, 0x99a792, 0x99b43b},
+		{0x813aec, 0x87a23e, 0x87acf3},
+		{0x84c53a, 0x876655, 0x877286, 0x9f7651, 0x9f8282, 0x9f8eb3, 0x9f9ae4, 0x9fa715, 0x9fb346, 0xa00004},
+		{0x872c3e, 0x8739b9, 0x889d0b},
+		{0x803cf1, 0x8786a8, 0x879473, 0x96ee66},
+		{0x806afb, 0x971a40, 0x9a5c1b, 0x9a93d2, 0x9ae5e2, 0x9af06f, 0x9afafc, 0x9b077d, 0x9b13fe, 0x9b1e09, 0x9b2814, 0x9b33f5},
+		{0x858b4f, 0x97a382, 0x9cfc42, 0x9d0931, 0x9f1282, 0x9f1f71, 0xa00c35, 0xa01924, 0xa02613, 0xa03302, 0xa03ff1, 0xa04ce0, 0xa059cf, 0xa0dba9, 0xa0e898, 0xa0f587, 0xa10276, 0xa10f65, 0xa11c54, 0xa12943},
+		{0x80944b, 0x9ce7c8, 0x9cf205, 0x9ebcf2, 0x9f2ea6, 0x9f38e3, 0x9f4320, 0x9f4d5d, 0x9f579a, 0x9f61d7, 0x9f6c14, 0xa1bc03},
+	};
+	// Common expression table at main_data+0x768c: partial and closed eyes,
+	// including Kage's four costume/mask columns and Sarah's two costumes.
+	static constexpr u32 expressions[8][2][4] = {
+		{{0x86ff68}, {0x870c11}},
+		{{0x87a23e}, {0x87acf3}},
+		{{0x876655}, {0x877286}},
+		{{0x872c3e}, {0x8739b9}},
+		{{0x8786a8}, {0x879473}},
+		{{0x9ae5e2, 0x9afafc, 0x9b13fe, 0x9b2814}, {0x9af06f, 0x9b077d, 0x9b1e09, 0x9b33f5}},
+		{{0x9cfc42, 0x9f1282}, {0x9d0931, 0x9f1f71}},
+		{{0x9ce7c8}, {0x9cf205}},
+	};
+	if (fighter >= 8 || !object) return 0;
+	for (int state = 0; state < 2; ++state)
+		for (u32 head : expressions[fighter][state]) if (head == object) return 16 + state;
+	for (u32 head : heads[fighter]) if (head == object) return 2;
+	return 0;
+}
+
+const model_overrides::mesh *model2_video::selected_model(u32 object)
+{
+	if (m_force_models) return m_model_overrides.find(object);
+	const auto &s = m_model_selection;
+	if (s.selecting) {
+		// Only human players have a portrait. The select draws P1 then P2;
+		// accessories follow their head and don't start another portrait.
+		for (int p = 0; p < 2; ++p)
+			if ((s.humans & (1 << p)) && !(m_portraits_seen & (1 << p)) &&
+				(object == s.parts[p][2] || vf1_head_slot(s.fighter[p], object))) {
+				m_model_owner = p;
+				m_portraits_seen |= 1 << p;
+				break;
+			}
+	} else {
+		// Each complete fighter starts with slot 0, then torso/head/limbs.
+		// Resolve owners from their actual slots, not their side of the camera.
+		// Identical roots in a mirror match draw P1 then P2.
+		const bool p1 = object == s.parts[0][0] && object != 0;
+		const bool p2 = object == s.parts[1][0] && object != 0;
+		if (p1 && p2) m_model_owner = m_model_owner == 0 ? 1 : 0;
+		else if (p1 || p2) m_model_owner = p1 ? 0 : 1;
+	}
+	if (m_model_owner < 0 || !s.vf1[m_model_owner]) return nullptr;
+	// Preserve the expression of the object actually in this display list.
+	// Mapping slot 2 to the default head first would erase VF2's face swaps
+	// (and the actor's current slot can already be one frame ahead of the list).
+	const unsigned fighter = s.fighter[m_model_owner];
+	if (fighter >= vf1_models::fighter_count) return nullptr;
+	if (fighter == 0)
+		if (const auto *mesh = m_model_overrides.find(object)) return mesh;
+	if (const int slot = vf1_head_slot(fighter, object))
+		return m_model_overrides.find(vf1_models::key(fighter, slot));
+	// Same skeleton slots for both costumes. Map the chosen player's current
+	// objects to the VF1 parts prepared at startup; hands/accessories stay VF2.
+	static constexpr u32 binding[16] = {
+		0, 0x98c21c, 0x84dc10, 0x84eb76, 0x84fe0c, 0, 0x84e8b9, 0x84fc17,
+		0, 0x98bdf6, 0x84f00b, 0x84d971, 0x84d414, 0x84ee66, 0x84d6d2, 0x84d16b,
+	};
+	for (int i = 1; i < 16; ++i)
+		if (binding[i] && object == s.parts[m_model_owner][i]) {
+			if (const auto *mesh = m_model_overrides.find(vf1_models::key(fighter, i))) return mesh;
+			// Keep old Akira-only diagnostic tables usable by the renderer checks.
+			if (fighter == 0) return m_model_overrides.find(binding[i]);
+		}
+	return nullptr;
+}
+
 void model2_video::geo_parse()
 {
 	if (m_smooth) smooth_record_start();
@@ -2871,6 +3020,8 @@ void model2_video::geo_parse()
 // The geometrizer through a display list (buffer RAM, or a copy kept for smooth motion)
 void model2_video::geo_run(u32 *buffer, u32 start, geo_state *geo, raster_state *raster)
 {
+	m_model_owner = -1;
+	m_portraits_seen = 0;
 	u32  address = (start & 0x1ffff)/4;
 	u32 *input = &buffer[address];
 	u32  opcode;
@@ -2967,7 +3118,7 @@ void model2_renderer::draw_scanline_solid(int32_t scanline, const extent_t& exte
 	tb = gamma_value[tb];
 
 	// build the final color
-	color = rgb_t(tr, tg, tb);
+	color = object.direct_colour ? object.direct_colour : rgb_t(tr, tg, tb);
 
 	int x = extent.startx;
 	int dx = checker ? 2 : 1;

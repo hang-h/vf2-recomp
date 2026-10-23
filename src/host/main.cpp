@@ -656,7 +656,7 @@ struct settings
 
 // The player's own game, the first time (as vf1-recomp asks for vf.zip): no complete set in their
 // data folder's roms/ yet, so ask for MAME's vf2.zip with a file picker, check it, and copy it in.
-// Only roms/vf2.zip is ever read, so a roms folder shared with other games can't get in the way.
+// vf.zip beside vf2.zip optionally supplies the original eight VF1 fighters at startup.
 // False if they cancel (or there's no way to pick a file: then they're told where to put it).
 // The player's ROM folder (--roms, VF2_ROMS or settings.ini's roms_folder: `folder`) is looked in
 // first and only read; without vf2.zip there, the data folder's roms/ next; a set chosen with the

@@ -8,6 +8,7 @@
 #include <array>
 #include "mame_lite.h"
 #include "poly.h"
+#include "model_override.h"
 #include <memory>
 
 class model2_video;
@@ -35,6 +36,7 @@ private:
 
 struct m2_poly_extra_data
 {
+	u32      direct_colour = 0; // optional local mesh colour; zero uses the arcade palette
 	model2_video *  state;
 	u32      lumabase;
 	u32      colorbase;
@@ -74,8 +76,18 @@ public:
 	// the luma RAM are the board's; the ROMs are the regions.
 	model2_video(u32 *bufferram, u32 *textureram0, u32 *textureram1, u8 *lumaram, u16 *palram,
 				 u16 *colorxlat, u8 *gamma, const u8 *texture_rom, size_t texture_rom_bytes,
-				 const u8 *polygon_rom, size_t polygon_rom_bytes);
+				 const u8 *polygon_rom, size_t polygon_rom_bytes, model_overrides::table prepared_models = {});
 	~model2_video();
+	// Per-player model slots, captured with each display list so a replay/redraw
+	// retains the skin chosen when that picture was generated.
+	struct model_selection {
+		bool selecting = false;
+		u8 humans = 0;
+		std::array<bool, 2> vf1{};
+		std::array<u8, 2> fighter{}; // VF1 roster index, captured with the choice
+		std::array<std::array<u32, 16>, 2> parts{};
+	};
+	void set_model_selection(const model_selection &selection) { m_model_selection = selection; }
 
 	// screen_vblank: the geometrizer runs through the display list in buffer RAM
 	void geo_parse();
@@ -216,6 +228,14 @@ public:
 	u8 *m_gamma_table;
 
 private:
+	model_overrides m_model_overrides;
+	model_selection m_model_selection;
+	bool m_force_models = false; // explicit diagnostic VF2_MODEL_OVERRIDES package
+	int m_model_owner = -1;
+	u8 m_portraits_seen = 0;
+	const model_overrides::mesh *selected_model(u32 object);
+	bool m_suppress_object = false;
+	void draw_override(geo_state *geo, const model_overrides::mesh &mesh);
 	friend class model2_renderer;
 	friend class texdump;          // VF2_DUMP_TEXTURES (texdump.h)
 	std::unique_ptr<raster_state> m_raster;
@@ -453,6 +473,7 @@ struct model2_video::polygon
 			std::fill(std::begin(vertex.p), std::end(vertex.p), 0);
 	}
 
+	u32             direct_colour = 0;
 	void *          next = nullptr;
 	poly_vertex     v[8];
 	u8              num_vertices = 3;
@@ -561,6 +582,7 @@ struct model2_video::geo_state
 // each object's polygon address and matrix, the lights, the focus settings.
 struct model2_video::smooth_rec
 {
+	model_selection models;
 	u64 frame = 0;
 	u32 start = 0;
 	std::vector<u32> list;                             // buffer RAM, 128 KB

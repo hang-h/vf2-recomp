@@ -186,8 +186,10 @@ model2a::model2a(romset::result &&roms)
 		m_gamma[i] = u8(std::max((double(i) - 64.0) * 255.0 / 191.0, 0.0));
 	m_pens.fill(0xff000000);   // rgb_t::black(), until the game writes them
 	const auto &tex = m_roms.regions[romset::TEXTURES], &poly = m_roms.regions[romset::POLYGONS];
+	m_vf1_available = !m_roms.vf1_models.empty();
 	m_video = std::make_unique<model2_video>(reinterpret_cast<u32 *>(m_bufferram.data()), m_tex0.data(), m_tex1.data(),
-		m_lumaram.data(), m_palram.data(), m_colorxlat.data(), m_gamma, tex.data(), tex.size(), poly.data(), poly.size());
+		m_lumaram.data(), m_palram.data(), m_colorxlat.data(), m_gamma, tex.data(), tex.size(), poly.data(), poly.size(),
+		std::move(m_roms.vf1_models));
 	m_video->m_fbvramA = m_fbvram_a.data();
 	m_video->m_fbvramB = m_fbvram_b.data();
 	resize_screen();
@@ -505,6 +507,129 @@ bool model2a::set_secret_character(int fighter)
 	return true;
 }
 
+namespace {
+// VF2 numbers fighters by its internal cast order, then repeats it for the
+// alternate costumes. VF1 assets use the visible select row's first eight slots.
+int vf1_fighter(u8 id)
+{
+	static constexpr int roster[] = {0, 7, 6, 5, 2, 4, 1, 3, -1, -1, -1, -1, -1};
+	return id < 26 ? roster[id % 13] : -1;
+}
+constexpr const char *VF1_NAMES[] = {"Akira", "Pai", "Lau", "Wolf", "Jeffry", "Kage", "Sarah", "Jacky"};
+}
+
+void model2a::update_vf1_selection()
+{
+	if (!m_vf1_available) return;
+	const u8 mode = game_mode(), humans = (m_workram[0x68] >> 2) & 3;
+	if (mode == 7 && m_vf1_last_mode != 7) {
+		m_vf1_selected = {};
+		m_vf1_locked = {};
+	}
+	const u8 inputs[] = {m_in1, m_in2};
+	for (int p = 0; p < 2; ++p) {
+		const u8 pressed = m_vf1_previous[p] & ~inputs[p];
+		m_vf1_previous[p] = inputs[p];
+		m_vf1_eaten[p] = 0;
+		if (mode != 7 || !(humans & (1 << p))) continue;
+		// VF2 2.1: the select's actor is 0x510980 / 0x512980, +1b0
+		// is the fighter number (also used by set_secret_character).
+		const u8 fighter = m_workram[0x10980 + 0x2000 * p + 0x1b0];
+		const int roster = vf1_fighter(fighter);
+		if (m_vf1_fighter[p] != roster) m_vf1_selected[p] = false;
+		m_vf1_fighter[p] = roster;
+		if (roster < 0) m_vf1_selected[p] = false;
+		else {
+			// Up/down belong to the skin selector here. They must not also
+			// reach VF2's own vertical-cursor/hidden-character handling.
+			m_vf1_eaten[p] = 0x30;
+			if (!m_vf1_locked[p]) {
+				const bool before = m_vf1_selected[p];
+				if ((pressed & 0x30) == 0x20) m_vf1_selected[p] = true;
+				else if ((pressed & 0x30) == 0x10) m_vf1_selected[p] = false;
+				if (before != m_vf1_selected[p])
+					fprintf(stderr, "model select: P%d %s %s\n", p + 1, VF1_NAMES[roster], m_vf1_selected[p] ? "VF1" : "VF2");
+			}
+		}
+		if (pressed & 0x07) m_vf1_locked[p] = true; // confirm with an attack/guard button
+	}
+	m_vf1_last_mode = mode;
+}
+
+model2_video::model_selection model2a::vf1_model_selection() const
+{
+	model2_video::model_selection s;
+	if (!m_vf1_available) return s;
+	s.selecting = game_mode() == 7;
+	s.humans = (m_workram[0x68] >> 2) & 3;
+	for (int p = 0; p < 2; ++p) {
+		const size_t actor = 0x10980 + p * 0x2000;
+		const u8 fighter = m_workram[actor + 0x1b0];
+		s.fighter[p] = vf1_fighter(fighter);
+		s.vf1[p] = game_mode() >= 7 && (s.humans & (1 << p)) && m_vf1_selected[p]
+			&& s.fighter[p] < vf1_models::fighter_count;
+		// Sixteen skeleton slots at actor+0x40, each indexing a 16-byte
+		// descriptor at main_data+0xe0000; its last word is the polygon address.
+		for (size_t i = 0; i < 16; ++i) {
+			u32 index;
+			memcpy(&index, &m_workram[actor + 0x40 + 4 * i], 4);
+			const size_t at = 0xe000c + size_t(index) * 16;
+			if (at + 4 <= m_data.size()) memcpy(&s.parts[p][i], &m_data[at], 4);
+		}
+	}
+	return s;
+}
+
+u8 model2a::vf1_portrait_mask() const
+{
+	if (!m_vf1_available || game_mode() != 7) return 0;
+	const u8 humans = (m_workram[0x68] >> 2) & 3;
+	u8 mask = 0;
+	for (int p = 0; p < 2; ++p) {
+		const int fighter = vf1_fighter(m_workram[0x10980 + p * 0x2000 + 0x1b0]);
+		if (fighter >= 0 && (humans & (1 << p)) && m_vf1_selected[p] && m_roms.vf1_portraits[fighter].available())
+			mask |= 1 << fighter;
+	}
+	return mask;
+}
+
+// The shared fighter icons are on map 2, behind the players' cursor layer.
+// Replace only image pixels, leaving all board RAM and each frame untouched.
+void model2a::draw_vf1_portraits(u8 mask)
+{
+	constexpr int Y = 272, W = 48, H = 88;
+	constexpr u16 last[] = {0xaab9, 0xab3c, 0xabbc, 0xac3c, 0xacbc, 0xad3c, 0xadbb, 0xae3c};
+	// The original white pen follows the whole select screen's palette fade.
+	const u32 white = m_pens[0x55e];
+	for (int fighter = 0; fighter < vf1_models::fighter_count; ++fighter) {
+		if (!(mask & (1 << fighter))) continue;
+		const int X = 8 + W * fighter;
+		const size_t at = 2 * 4096 + (Y / 8) * 64 + X / 8;
+		bool installed = true;
+		for (int x = 0; x < 6; ++x)
+			if (m_tiles.tile_ram[at + x] != 0xaa80 + fighter * 0x80 + x ||
+				m_tiles.tile_ram[at + 10 * 64 + x] != last[fighter] + x) installed = false;
+		if (!installed) continue; // not this icon, or a transition out of select
+		const auto &image = m_roms.vf1_portraits[fighter];
+		for (int y = 0; y < HEIGHT; ++y) {
+			int map, my, x0;
+			if (!m_tiles.line_source(5, y, map, my, x0) || map != 2 || my <= Y || my >= Y + H - 1) continue;
+			for (int x = 0; x < WIDTH; ++x) {
+				const int mx = (x + x0) & 511;
+				if (mx <= X || mx >= X + W - 1) continue;
+				if (m_tiles.tile_ram[0x6800 + y * 4 + x / 128] & (0x8000 >> ((x % 128) / 8))) continue;
+				// Crop 30x56 to VF2's 46x86 interior, preserving face proportions.
+				const int sx = image.crop_x + (mx - X - 1) * 30 / (W - 2), sy = 2 + (my - Y - 1) * 56 / (H - 2);
+				const u32 pixel = image.pixels[sy * image.width + sx];
+				u32 colour = 0xff000000;
+				for (int shift : {16, 8, 0})
+					colour |= (((pixel >> shift) & 255) * ((white >> shift) & 255) / 255) << shift;
+				m_sys24_top.pix(y, m_ext + x) = colour;
+			}
+		}
+	}
+}
+
 // smooth motion's backdrop move: the screen's move for a unit of the backdrop's scroll (its x
 // goes against the horizontal scroll, its y with the vertical; found by matching the backdrop
 // drawn a frame on, moved back, to the frame before's)
@@ -532,6 +657,13 @@ uint64_t model2a::tgp_now() const
 void model2a::reset()
 {
 	render_wait();
+	m_vf1_selected = {};
+	m_vf1_fighter = {-1, -1};
+	m_vf1_locked = {};
+	m_vf1_previous = {0xff, 0xff};
+	m_vf1_eaten = {};
+	m_vf1_last_mode = 0;
+	m_video->set_model_selection({});
 	m_cur_2d.reset();   // (what was kept for drawing pictures again belongs to the run before)
 	m_video->smooth_reset();
 	m_last_pic.reset();
@@ -812,6 +944,7 @@ void model2a::timer_fired(int id)
 		// if 60 Hz mode or frame number is even, trigger geometrizer to start new frame
 		if ((m_videocontrol & 1) == 0 || (m_framenum & 1) == 0) {
 			m_video->m_geo_frame = m_frame_number;   // (smooth motion's)
+			if (m_vf1_available) m_video->set_model_selection(vf1_model_selection());
 			m_video->geo_parse();
 		}
 		const u32 line = 1 << 0;
@@ -873,6 +1006,7 @@ void model2a::run_until(uint64_t cycle)
 // Runs to the end of the frame's vblank, where MAME draws the screen.
 void model2a::run_frame()
 {
+	update_vf1_selection();
 	const uint64_t f = m_frame_number;
 	if (!m_ram_log.empty() && m_ram_log.front().frame + 64 < f) {   // (the lists kept keep the last frames' changes: a held picture's too)
 		ram_guard();   // (a picture being drawn alongside may be reading the log: taking its RAMs back)
@@ -1698,7 +1832,7 @@ void model2a::redraw_into(const picture_desc &pic, u32 *out, size_t stride)
 	const int s = m_scale, e = m_ext, w = WIDTH + 2 * e;
 	frame_2d &st = *pic.state;
 	if (!live) swap_2d(st);
-	draw_2d(pic.polygons, false);
+	draw_2d(pic.polygons, false, st.vf1_portraits);
 	m_2d_key[0] = ~0ull;
 	const u32 pen0 = m_pens[0];
 	if (!live) swap_2d(st);   // (the live state back; its colours are worked out again at the next picture)
@@ -1730,7 +1864,7 @@ void model2a::draw_picture(u32 *out, size_t stride, bool polygons, bool async, f
 	const bool smoothly = alpha >= 0 && polygons && m_video->smooth() && !m_video->shows_framebuffer();
 	const uint64_t key[] = { m_frame_number, uint64_t(s), uint64_t(e), uint64_t(m_backdrop_smooth), uint64_t(parts != nullptr) };
 	if (!smoothly || memcmp(key, m_2d_key, sizeof key)) {
-		draw_2d(polygons, parts != nullptr);
+		draw_2d(polygons, parts != nullptr, vf1_portrait_mask());
 		memcpy(m_2d_key, key, sizeof key);
 		if (!smoothly) m_2d_key[0] = ~0ull;
 	}
@@ -1753,7 +1887,11 @@ void model2a::draw_picture(u32 *out, size_t stride, bool polygons, bool async, f
 	// what's needed to draw this picture again (redraw)
 	if (m_video->smooth()) {
 		auto pic = std::make_shared<picture_desc>();
-		if (!m_cur_2d || m_cur_2d->frame != m_frame_number) { m_cur_2d = std::make_shared<frame_2d>(); m_cur_2d->frame = m_frame_number; }
+		if (!m_cur_2d || m_cur_2d->frame != m_frame_number) {
+			m_cur_2d = std::make_shared<frame_2d>();
+			m_cur_2d->frame = m_frame_number;
+			m_cur_2d->vf1_portraits = vf1_portrait_mask();
+		}
 		pic->state = m_cur_2d;
 		pic->polygons = polygons;
 		pic->framebuffer = framebuffer;
@@ -1934,7 +2072,7 @@ void model2a::draw_picture(u32 *out, size_t stride, bool polygons, bool async, f
 // The 2D at the arcade's resolution: m_sys24, the backdrop (maps 2 and 3, opaque); m_sys24_mid,
 // the layers over it under the 3D; m_sys24_top, the layers over the 3D. With the background
 // filter the backdrop softened too; for render_parts the backdrop padded.
-void model2a::draw_2d(bool polygons, bool parts)
+void model2a::draw_2d(bool polygons, bool parts, u8 vf1_portraits)
 {
 	if (m_palette_dirty)
 		for (int i = 0; i < 0x1000; i++) set_pen(i);
@@ -1964,6 +2102,7 @@ void model2a::draw_2d(bool polygons, bool parts)
 			for (int layer = 3; layer >= 0; layer--) {
 				m_tiles.draw(m_sys24_top, clip, (layer << 1) | 1, 0, 0);
 				if (wide && layer >= 2) m_tiles.draw_sides(m_sys24_top, (layer << 1) | 1, 0, e, pan);
+				if (vf1_portraits && layer == 2) draw_vf1_portraits(vf1_portraits);
 			}
 		}
 	});
@@ -2722,8 +2861,8 @@ u8 model2a::io_read(int offset)
 		if (BIT(m_io_config, offset)) {
 			switch (offset) {
 			case 1: data = in0_r(); break;
-			case 2: data = m_in1; break;
-			case 3: data = m_in2; break;
+			case 2: data = m_in1 | m_vf1_eaten[0]; break;
+			case 3: data = m_in2 | m_vf1_eaten[1]; break;
 			case 6: data = m_sw; break;
 			default: data = 0xff; break;
 			}

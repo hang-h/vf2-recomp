@@ -7,6 +7,7 @@
     "src/host/d3d11_map.cpp",
     "src/host/stb_image_impl.cpp",
     "src/host/romset.cpp",
+    "src/host/vf1_models.cpp",
     "src/host/input_script.cpp",
     "src/machine/model2a.cpp",
     "src/machine/model2_video.cpp",

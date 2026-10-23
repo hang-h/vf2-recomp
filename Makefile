@@ -36,7 +36,7 @@ MACHINE = src/machine/model2a.cpp src/machine/model2_video.cpp src/machine/model
 # MAME's 68000 (the sound board's CPU): the generated instruction handlers, unchanged
 M68000 = third_party/mame/m68000/m68000.cpp third_party/mame/m68000/m68000-decode.cpp \
 	third_party/mame/m68000/m68000-sdf.cpp third_party/mame/m68000/m68000-sdp.cpp
-HOST = src/host/romset.cpp src/host/input_script.cpp
+HOST = src/host/romset.cpp src/host/vf1_models.cpp src/host/input_script.cpp
 
 
 # SLJIT (BSD-2): the native code made at start-up. C, built by the C++ compiler's driver (-x c), so
@@ -169,3 +169,25 @@ $(BIN)/gpu3dcmp: $(call objs,tools/gpu3dcmp.cpp src/host/stb_image_impl.cpp $(MA
 endif
 .PHONY: gpu3dcmp
 gpu3dcmp: $(BIN)/gpu3dcmp
+
+# ROM-free model override integration check (on macOS, checks Metal pixels too).
+$(BIN)/selectcheck: $(call objs,tools/models/selectcheck.cpp $(MACHINE) $(HOST) $(CORE) $(GEN_NONE) $(M68000)) $(SLJIT_OBJ)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS)
+
+$(BIN)/rostercheck: $(call objs,tools/models/rostercheck.cpp $(MACHINE) $(HOST) $(CORE) $(GEN_NONE) $(M68000)) $(SLJIT_OBJ)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS)
+
+$(BIN)/facecheck: $(call objs,tools/models/facecheck.cpp $(MACHINE) $(HOST) $(CORE) $(GEN_NONE) $(M68000)) $(SLJIT_OBJ)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS)
+
+$(BIN)/vf1check: $(call objs,tools/models/vf1check.cpp src/host/romset.cpp src/host/vf1_models.cpp)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS)
+
+$(OBJ)/tools/models/modelcheck.o: CXXFLAGS += $(if $(filter metal,$(GPU3D)),-DVF2_MODELCHECK_METAL=1)
+$(BIN)/modelcheck: $(call objs,tools/models/modelcheck.cpp src/machine/model2_video.cpp src/machine/model2_smooth.cpp src/core/mame_shim.cpp) $(if $(filter metal,$(GPU3D)),$(GPU3D_OBJ))
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS) $(if $(filter metal,$(GPU3D)),$(GPU3D_LIBS))

@@ -4,11 +4,11 @@
 #import <UIKit/UIKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
-static void remove_abandoned_imports(NSURL *documents)
+static void remove_abandoned_imports(NSURL *folder)
 {
     NSFileManager *files = NSFileManager.defaultManager;
     NSPredicate *ownedName = [NSPredicate predicateWithFormat:@"SELF MATCHES %@", @"\\.vf2-import-[0-9]+-[0-9]+"];
-    NSArray<NSURL *> *items = [files contentsOfDirectoryAtURL:documents
+    NSArray<NSURL *> *items = [files contentsOfDirectoryAtURL:folder
         includingPropertiesForKeys:@[NSURLIsDirectoryKey, NSURLIsSymbolicLinkKey] options:0 error:nil];
     for (NSURL *item in items) {
         if (![ownedName evaluateWithObject:item.lastPathComponent]) continue;
@@ -47,6 +47,7 @@ static void remove_abandoned_imports(NSURL *documents)
         name:UIApplicationDidBecomeActiveNotification object:nil];
     self.documents = [NSFileManager.defaultManager URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].firstObject;
     remove_abandoned_imports(self.documents); // before any import worker can start
+    remove_abandoned_imports([self.documents URLByAppendingPathComponent:@"roms" isDirectory:YES]);
     NSError *error = nil;
     [NSFileManager.defaultManager createDirectoryAtURL:[self.documents URLByAppendingPathComponent:@"roms" isDirectory:YES]
         withIntermediateDirectories:YES attributes:nil error:&error];
@@ -56,7 +57,7 @@ static void remove_abandoned_imports(NSURL *documents)
     title.font = [UIFont preferredFontForTextStyle:UIFontTextStyleTitle1];
     title.accessibilityTraits = UIAccessibilityTraitHeader;
     UILabel *instructions = [UILabel new];
-    instructions.text = @"Copy vf2.zip to Files → On My iPhone/iPad → VF2 Recomp → roms.\nKeep the ZIP compressed, then return to the app to start automatically. You can also import it from iCloud Drive or another location.";
+    instructions.text = @"Copy vf2.zip to Files → On My iPhone/iPad → VF2 Recomp → roms.\nFor VF1 models, also copy vf.zip into the same folder. Keep both ZIPs compressed. On character select, use ↑ for VF1 or ↓ for VF2, then confirm normally. Available for the original eight fighters; Shun and Lion keep VF2 models.\nYou can also import vf2.zip from iCloud Drive or another location.";
     instructions.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     instructions.numberOfLines = 0;
     self.choose = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -129,8 +130,8 @@ static void remove_abandoned_imports(NSURL *documents)
 {
     self.busy = YES;
     self.choose.enabled = NO;
-    self.status.text = @"Checking vf2.zip…";
-    NSURL *destination = [self.documents URLByAppendingPathComponent:@"vf2.zip"];
+    self.status.text = @"Checking VF2 and preparing models from vf.zip if present…";
+    NSURL *destination = [self.documents URLByAppendingPathComponent:@"roms/vf2.zip"];
     // Coordination downloads provider files as needed and protects against a Files
     // write during the copy. Keep scoped access until all reads have finished.
     BOOL scoped = [url startAccessingSecurityScopedResource];
@@ -152,10 +153,11 @@ static void remove_abandoned_imports(NSURL *documents)
             self.choose.enabled = YES;
             if (result->ok) {
                 self->_roms = std::move(*result);
-                self.status.text = @"ROM verified. Starting the game…";
+                self.status.text = self->_roms.vf1_models.empty()
+                    ? @"VF2 verified. Starting the game…" : @"VF2 verified. VF1 models ready. Starting the game…";
                 self.ready = YES;
             } else {
-                self.status.text = [@"Cannot load this file. Choose the complete MAME vf2 (Version 2.1) ZIP.\n"
+                self.status.text = [@"Cannot load the ROMs. Check vf2.zip (MAME vf2 Version 2.1) and vf.zip if present.\n"
                     stringByAppendingString:[NSString stringWithUTF8String:result->error.c_str()]];
             }
         });
@@ -164,11 +166,18 @@ static void remove_abandoned_imports(NSURL *documents)
 - (void)scanFiles
 {
     if (self.busy || self.ready || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
-    for (NSString *name in @[@"vf2.zip", @"roms/vf2.zip"]) {
+    for (NSString *name in @[@"roms/vf2.zip", @"vf2.zip"]) {
         NSURL *url = [self.documents URLByAppendingPathComponent:name];
         NSDictionary *attributes = [NSFileManager.defaultManager attributesOfItemAtPath:url.path error:nil];
         if (![attributes[NSFileType] isEqual:NSFileTypeRegular]) { [self.checked removeObjectForKey:name]; continue; }
-        NSArray *fingerprint = @[attributes[NSFileSize], attributes[NSFileModificationDate]];
+        // Retry when a companion is added/replaced, even if vf2.zip is unchanged.
+        NSMutableArray *fingerprint = [NSMutableArray arrayWithArray:@[attributes[NSFileSize], attributes[NSFileModificationDate]]];
+        for (NSString *companion in @[@"roms/vf.zip", @"vf.zip"]) {
+            NSDictionary *vf1 = [NSFileManager.defaultManager attributesOfItemAtPath:
+                [self.documents URLByAppendingPathComponent:companion].path error:nil];
+            [fingerprint addObject:vf1[NSFileSize] ?: @0];
+            [fingerprint addObject:vf1[NSFileModificationDate] ?: @0];
+        }
         if ([self.checked[name] isEqual:fingerprint]) continue;
         self.checked[name] = fingerprint;
         [self readURL:url importing:NO];

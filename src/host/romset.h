@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include "vf1_models.h"
 
 namespace romset {
 
@@ -38,8 +39,12 @@ struct result
 	std::string error;                  // what's missing or wrong, for the player
 	std::vector<uint8_t> regions[N_REGIONS];
 	std::vector<rom_status> roms;       // the checklist, one line per ROM
+	model_overrides::table vf1_models; // prepared from adjacent vf.zip at startup; no VF1 machine retained
+	::vf1_models::portraits vf1_portraits;
 };
 
+// Prepares the eight regular VF1 fighters when vf.zip is beside the VF2 set (or in its roms/
+// folder). Missing VF1 keeps VF2's original models; an invalid VF1 set is an error.
 result load(const std::string &zip);
 
 // Copy to a staging file, validate that copy, then atomically install it. A failed

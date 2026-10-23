@@ -1,4 +1,6 @@
 #include "romset.h"
+#include "rom_zip.h"
+#include "vf1_models.h"
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -17,83 +19,8 @@ namespace romset {
 
 namespace {
 
-// ---- a minimal zip reader: the central directory, stored and deflated entries ----
-
-struct entry { std::string name; uint32_t crc = 0, csize = 0, usize = 0, local = 0; uint16_t method = 0; };
-
-uint16_t le16(const uint8_t *p) { return uint16_t(p[0] | p[1] << 8); }
-uint32_t le32(const uint8_t *p) { return uint32_t(p[0] | p[1] << 8 | p[2] << 16 | uint32_t(p[3]) << 24); }
-
-struct zip
-{
-	std::vector<uint8_t> data;
-	std::vector<entry> entries;
-
-	bool open(const std::string &path)
-	{
-		// vf2.zip is about 20 MB: anything over 256 MB isn't the set, and isn't read
-		std::error_code ec;
-		const uintmax_t size = std::filesystem::file_size(path, ec);
-		if (ec || size < 22 || size > (256u << 20)) return false;
-		FILE *f = fopen(path.c_str(), "rb");
-		if (!f) return false;
-		const long n = long(size);
-		data.resize(size_t(n));
-		const bool got = fread(data.data(), 1, data.size(), f) == data.size();
-		fclose(f);
-		if (!got) return false;
-		// the end of central directory record, within the last 64 KB
-		long eocd = -1;
-		for (long i = n - 22; i >= 0 && i >= n - 22 - 65535; i--)
-			if (le32(&data[i]) == 0x06054b50) { eocd = i; break; }
-		if (eocd < 0) return false;
-		const uint16_t count = le16(&data[eocd + 10]);
-		size_t at = le32(&data[eocd + 16]);
-		for (int k = 0; k < count; k++) {
-			if (at + 46 > data.size() || le32(&data[at]) != 0x02014b50) return false;
-			entry e;
-			e.method = le16(&data[at + 10]);
-			e.crc = le32(&data[at + 16]);
-			e.csize = le32(&data[at + 20]);
-			e.usize = le32(&data[at + 24]);
-			const uint16_t nlen = le16(&data[at + 28]), xlen = le16(&data[at + 30]), clen = le16(&data[at + 32]);
-			e.local = le32(&data[at + 42]);
-			if (at + 46 + nlen > data.size()) return false;
-			e.name.assign(reinterpret_cast<const char *>(&data[at + 46]), nlen);
-			const size_t slash = e.name.find_last_of('/');
-			if (slash != std::string::npos) e.name = e.name.substr(slash + 1);
-			entries.push_back(e);
-			at += 46 + nlen + xlen + clen;
-		}
-		return true;
-	}
-
-	bool read(const entry &e, std::vector<uint8_t> &out) const
-	{
-		const size_t local = e.local;
-		if (local + 30 > data.size() || le32(&data[local]) != 0x04034b50) return false;
-		const size_t start = local + 30 + le16(&data[local + 26]) + le16(&data[local + 28]);
-		if (start + size_t(e.csize) > data.size() || e.usize > (64u << 20)) return false;
-		out.resize(e.usize);
-		if (e.method == 0) {
-			if (e.csize != e.usize) return false;
-			memcpy(out.data(), &data[start], e.usize);
-		} else if (e.method == 8) {
-			z_stream z{};
-			if (inflateInit2(&z, -MAX_WBITS) != Z_OK) return false;
-			z.next_in = const_cast<Bytef *>(&data[start]);
-			z.avail_in = e.csize;
-			z.next_out = out.data();
-			z.avail_out = e.usize;
-			const int r = inflate(&z, Z_FINISH);
-			inflateEnd(&z);
-			if (r != Z_STREAM_END || z.total_out != e.usize) return false;
-		} else {
-			return false;
-		}
-		return uint32_t(crc32(0, out.data(), uInt(out.size()))) == e.crc;
-	}
-};
+using rom_zip::zip;
+using rom_zip::entry;
 
 // ---- the set, as MAME's ROM_START( vf2 ) with MODEL2_CPU_BOARD and MODEL2A_VID_BOARD ----
 
@@ -166,7 +93,7 @@ void place(std::vector<uint8_t> &r, const rom &ro, const std::vector<uint8_t> &d
 
 const char *region_name(int r) { return r >= 0 && r < N_REGIONS ? REGIONS[r].name : "?"; }
 
-result load(const std::string &path)
+static result load_vf2(const std::string &path)
 {
 	result res;
 	zip z;
@@ -195,6 +122,13 @@ result load(const std::string &path)
 		res.roms.push_back(st);
 	}
 	res.ok = bad == 0;
+	return res;
+}
+
+result load(const std::string &path)
+{
+	result res = load_vf2(path);
+	if (res.ok && !vf1_models::prepare(path, res.vf1_models, res.error, &res.vf1_portraits)) res.ok = false;
 	return res;
 }
 
@@ -248,8 +182,10 @@ result import_file(const std::string &source, const std::string &destination)
 #endif
 	const bool closed = fclose(output.release()) == 0;
 	if (!synced || !closed) return failure("Couldn't save the ROM file to disk. Check free storage.");
-	result loaded = load(temporary.string());
+	result loaded = load_vf2(temporary.string());
 	if (!loaded.ok) return loaded;
+	// Companion belongs to the installed location, never the provider/staging folder.
+	if (!vf1_models::prepare(destination, loaded.vf1_models, loaded.error, &loaded.vf1_portraits)) { loaded.ok = false; return loaded; }
 	// Same filesystem: readers see the old complete ZIP or the new complete ZIP.
 	// On a platform where replacing an existing path is unsupported, fail safely.
 	fs::rename(temporary, target, ec);

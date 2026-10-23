@@ -53,6 +53,7 @@ void model2_video::smooth_record_start()
 	} else
 		r = std::make_shared<smooth_rec>();
 	r->frame = m_geo_frame;
+	r->models = m_model_selection;
 	r->start = m_geo_read_start_address;
 	r->list.assign(m_bufferram, m_bufferram + 0x20000 / 4);
 	r->geo = *m_geo;
@@ -634,7 +635,10 @@ void model2_video::replay_into(const moment &mo, std::vector<drawn_poly> &drawn)
 	std::copy(b->log_ram.begin(), b->log_ram.end(), ra.log_ram);
 	m_replay = true;
 	m_replay_obj = m_replay_light = m_replay_focal = 0;
+	const auto live_models = m_model_selection;
+	m_model_selection = b->models;
 	geo_run(const_cast<u32 *>(b->list.data()), b->start, m_geo_r.get(), m_raster_r.get());
+	m_model_selection = live_models;
 	m_replay = false;
 	build_drawn(m_raster_r.get(), drawn);
 }

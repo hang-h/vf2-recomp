@@ -13,8 +13,8 @@ See [UPSTREAM.md](UPSTREAM.md) for the directory boundaries and upstream update 
 1. Launch VF2 Recomp once. If no ROM is installed, the app waits on the import screen and creates its folders.
 2. Open **Files → Browse → On My iPhone → VF2 Recomp → roms**.
    On iPad, use **On My iPad** instead.
-3. Copy your **`vf2.zip`** into the **`roms`** folder. Keep the file compressed and named exactly `vf2.zip`.
-4. Return to VF2 Recomp. The app detects and validates the ROM, then starts automatically.
+3. Copy your **`vf2.zip`** into the **`roms`** folder. For the VF1 model experiment, also copy your **`vf.zip`** into that folder before returning to the app. Keep both ZIPs compressed.
+4. Return to VF2 Recomp. The app validates VF2, reads VF1 if present, prepares the models in memory, then starts automatically.
 
 The expected location in the Files app is:
 
@@ -22,17 +22,28 @@ The expected location in the Files app is:
 On My iPhone (or On My iPad)
 └── VF2 Recomp
     └── roms
-        └── vf2.zip
+        ├── vf2.zip
+        └── vf.zip   (optional: VF1 models)
 ```
 
 You need your own complete MAME **vf2 / Version 2.1** ROM set. No ROMs are included in the source or app.
 If you replace the ZIP after the game has started, restart the app to load the new file.
+VF1 models are decoded at each launch; no pre-extracted mesh, Python, sibling VF1 application or Xcode
+environment variable is needed. On character select, highlight **Akira, Pai, Lau, Wolf, Jeffry, Kage, Sarah or Jacky**, press **↑ for VF1** or
+**↓ for original VF2**, then confirm normally. P1/P2 choose independently, including mirror matches;
+the choice stays through the fight. The selected fighter's small portrait also switches to VF1's original image
+with ↑ and returns with ↓. In two-player selection, each shared icon shows VF1 while either player
+has that fighter's VF1 model selected. Browsing away or starting a new selection restores the default VF2
+appearance. Without `vf.zip`, the game keeps its original controls and models. A present but invalid
+`vf.zip` produces a loading error. Shun and Lion retain VF2 models. Hands and separately animated accessories retain
+VF2 models. See [model experiment details](../tools/models/README.md).
 
 Alternatively, use the ZIP import button on the app's import screen to choose `vf2.zip` from iCloud Drive,
 Downloads or another file provider. The iOS document picker handles downloads and access permissions.
-The app validates the ZIP and saves a copy as `vf2.zip` in its Documents folder, so you do not need to select it again.
+The app validates the ZIP and saves a copy as `roms/vf2.zip` in its Documents folder, so you do not need to select it again.
 Placing the ZIP directly in **VF2 Recomp/vf2.zip** is also supported. Automatic detection checks only these two
 locations inside the app's folder; it does not search the rest of the Files app.
+An older `Documents/vf2.zip` install also finds VF1 in `Documents/roms/vf.zip` (and vice versa).
 
 The ROM loader checks the contents and CRCs, not just the file name. Imports are copied to a temporary file on
 the same storage volume, flushed to disk and validated before replacing the saved ROM. Leftover import folders

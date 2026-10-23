@@ -1,0 +1,217 @@
+{
+  "source_record": "fd4f99",
+  "target": "VF2 Version 2.1, Akira default costume",
+  "description": "VF1 Akira head, torso, pelvis, arms, legs and feet. VF2 animated hands, belt and headband tails retained.",
+  "bindings": [
+    {
+      "object": "0x84dc10",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x86ff68",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x870c11",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x996845",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x9974ee",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x998197",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x998e40",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x999ae9",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x99a792",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x99b43b",
+      "tags": [
+        "h*"
+      ],
+      "reference": "h0"
+    },
+    {
+      "object": "0x98c21c",
+      "tags": [
+        "18"
+      ],
+      "reference": "18"
+    },
+    {
+      "object": "0x84eb76",
+      "tags": [
+        "26"
+      ],
+      "reference": "26",
+      "matrix": [
+        0.9615384615384616,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "object": "0x84fe0c",
+      "tags": [
+        "30"
+      ],
+      "reference": "30",
+      "matrix": [
+        1.1904761904761905,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "object": "0x84e8b9",
+      "tags": [
+        "38"
+      ],
+      "reference": "38",
+      "matrix": [
+        0.9615384615384616,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "object": "0x84fc17",
+      "tags": [
+        "42"
+      ],
+      "reference": "42",
+      "matrix": [
+        1.1904761904761905,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "object": "0x98bdf6",
+      "tags": [
+        "50"
+      ],
+      "reference": "50"
+    },
+    {
+      "object": "0x84f00b",
+      "tags": [
+        "54"
+      ],
+      "reference": "54"
+    },
+    {
+      "object": "0x84d971",
+      "tags": [
+        "58"
+      ],
+      "reference": "58"
+    },
+    {
+      "object": "0x84d414",
+      "tags": [
+        "62"
+      ],
+      "reference": "62"
+    },
+    {
+      "object": "0x84ee66",
+      "tags": [
+        "66"
+      ],
+      "reference": "66"
+    },
+    {
+      "object": "0x84d6d2",
+      "tags": [
+        "70"
+      ],
+      "reference": "70"
+    },
+    {
+      "object": "0x84d16b",
+      "tags": [
+        "74"
+      ],
+      "reference": "74"
+    }
+  ]
+}

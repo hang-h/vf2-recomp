@@ -6,6 +6,8 @@
 > Based on `mr-finster/vf2-recomp`. On iOS, use the Files app to copy your `vf2.zip` into **On My iPhone → VF2 Recomp → roms** (or **On My iPad**).
 > The upstream native recompilation and performance descriptions below apply to desktop builds. The iOS build uses an interpreter without JIT.
 
+> **VF1 model experiment:** Put your `vf.zip` beside `vf2.zip` (on iOS, in the app's **roms** folder). On character select, highlight Akira, Pai, Lau, Wolf, Jeffry, Kage, Sarah or Jacky and press **↑ for VF1 / ↓ for VF2**, then confirm normally. Models and small portraits change together; Shun and Lion keep VF2 models. VF2 reads VF1 at startup; no extracted mesh or environment setting is needed. Each player chooses independently. See [setup and match demo](tools/models/README.md).
+
 <p align="center">
   <a href="docs/screenshots/iphone-gameplay.png"><img src="docs/screenshots/iphone-gameplay.png" alt="Virtua Fighter 2 on iPhone with a circular joystick and native touch buttons" width="800"></a>
   <br><sub>iPhone with native touch controls</sub>

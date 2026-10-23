@@ -1,0 +1,28 @@
+at 1000
+press coin1 6
+wait 20
+press coin1 6
+wait 60
+press start1 6
+wait 180
+press p1punch 4
+at 1200
+press p1up 6
+at 1700
+press p1punch 4
+wait 10
+press p1punch 4
+wait 10
+press p1kick 4
+wait 45
+press p1right+p1punch 4
+wait 30
+press p1right+p1kick 4
+wait 40
+press p1down+p1guard 35
+wait 10
+press p1down+p1kick 4
+wait 40
+press p1up+p1kick 4
+at 2200
+press p1guard 60
